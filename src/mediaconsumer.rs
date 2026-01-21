@@ -7,7 +7,7 @@ use gstreamer_webrtc::WebRTCSessionDescription;
 use gstreamer_webrtc::gst_sdp::SDPMessage;
 use tokio::sync::mpsc::{Receiver, Sender};
 
-use crate::Signal;
+use crate::{HOST, Signal};
 
 pub fn run_consumer_pipeline(send_to_tokio: Sender<Signal>, mut gst_recv: Receiver<Signal>) {
     gst::init().unwrap();
@@ -15,7 +15,11 @@ pub fn run_consumer_pipeline(send_to_tokio: Sender<Signal>, mut gst_recv: Receiv
     let pipeline = Pipeline::with_name("pipeline");
 
     let webrtc_bin = ElementFactory::make("webrtcbin")
-        .property_from_str("stun-server", "stun://stun.l.google.com:19302")
+        .property_from_str("stun-server", format!("stun://{}:3478", HOST).as_str())
+        .property_from_str(
+            "turn-server",
+            format!("turn://test:test@{}:3478", HOST).as_str(),
+        )
         .build()
         .unwrap();
     let audio_converter = ElementFactory::make("audioconvert").build().unwrap();

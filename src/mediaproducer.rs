@@ -7,22 +7,16 @@ use gstreamer_webrtc::WebRTCSessionDescription;
 use gstreamer_webrtc::gst_sdp::SDPMessage;
 use tokio::sync::mpsc::{Receiver, Sender};
 
-use crate::Signal;
+use crate::{HOST, Signal};
 
+// This part swapped the uridecodebin with camera and microphone sources
 pub fn run_producer_pipeline(send_to_tokio: Sender<Signal>, mut gst_recv: Receiver<Signal>) {
     gst::init().unwrap();
 
     let pipeline = Pipeline::with_name("pipeline");
 
-    // todo: swap uridecodebin for camera
-    let decode_bin = ElementFactory::make("uridecodebin")
-        .property(
-            "uri",
-            "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4",
-        )
-        .build()
-        .unwrap();
-
+    let camera = ElementFactory::make("v4l2src").build().unwrap();
+    let mic = ElementFactory::make("pulsesrc").build().unwrap();
     let audio_converter = ElementFactory::make("audioconvert").build().unwrap();
     let video_converter = ElementFactory::make("videoconvert").build().unwrap();
     let audio_resampler = ElementFactory::make("audioresample").build().unwrap();
@@ -31,13 +25,24 @@ pub fn run_producer_pipeline(send_to_tokio: Sender<Signal>, mut gst_recv: Receiv
     let audio_payloader = ElementFactory::make("rtpopuspay").build().unwrap();
     let video_payloader = ElementFactory::make("rtph264pay").build().unwrap();
     let webrtc_bin = ElementFactory::make("webrtcbin")
-        .property_from_str("stun-server", "stun://stun.l.google.com:19302")
+        .property_from_str("stun-server", format!("stun://{}:3478", HOST).as_str())
+        .property_from_str(
+            "turn-server",
+            format!("turn://test:test@{}:3478", HOST).as_str(),
+        )
         .build()
         .unwrap();
 
+    // configure the encoder properties for low latency
+    video_encoder.set_property_from_str("speed-preset", "ultrafast");
+    video_encoder.set_property_from_str("tune", "zerolatency");
+    video_encoder.set_property("intra-refresh", true);
+    video_encoder.set_property_from_str("key-int-max", "15"); // Set I-frame interval to 15 frames
+
     pipeline
         .add_many([
-            &decode_bin,
+            &camera,
+            &mic,
             &audio_converter,
             &video_converter,
             &audio_resampler,
@@ -50,15 +55,21 @@ pub fn run_producer_pipeline(send_to_tokio: Sender<Signal>, mut gst_recv: Receiv
         .unwrap();
 
     Element::link_many([
+        &mic,
         &audio_converter,
         &audio_resampler,
+        // rate
         &audio_encoder,
         &audio_payloader,
         &webrtc_bin,
     ])
     .unwrap();
+
     Element::link_many([
+        &camera,
         &video_converter,
+        // scaler
+        // rate
         &video_encoder,
         &video_payloader,
         &webrtc_bin,
@@ -103,7 +114,6 @@ pub fn run_producer_pipeline(send_to_tokio: Sender<Signal>, mut gst_recv: Receiv
             }
         });
 
-        // tell webrtcbin to create an offer via an event
         println!("Telling webrtcbin to create an offer");
         webrtc_bin_clone_clone
             .emit_by_name::<()>("create-offer", &[&None::<gst::Structure>, &promise.clone()]);
@@ -129,37 +139,6 @@ pub fn run_producer_pipeline(send_to_tokio: Sender<Signal>, mut gst_recv: Receiv
             .unwrap();
 
         None
-    });
-
-    decode_bin.connect_pad_added(move |_src, src_pad| {
-        let new_pad_caps = src_pad.current_caps().unwrap();
-        let new_pad_struct = new_pad_caps.structure(0).unwrap();
-        let new_pad_type = new_pad_struct.name();
-
-        let is_video = new_pad_type.starts_with("video/x-raw");
-        let is_audio = new_pad_type.starts_with("audio/x-raw");
-
-        let el: Option<&Element> = if is_audio {
-            Some(&audio_converter)
-        } else if is_video {
-            Some(&video_converter)
-        } else {
-            None
-        };
-
-        if let Some(el) = el {
-            let converter_sink_pad = el.static_pad("sink").unwrap();
-
-            if !converter_sink_pad.is_linked() {
-                let res = src_pad.link(&converter_sink_pad);
-
-                if res.is_err() {
-                    eprintln!("Error linking pad");
-                } else {
-                    println!("Converter sink pad linked");
-                }
-            }
-        }
     });
 
     let webrtc_bin_clone = webrtc_bin.clone();

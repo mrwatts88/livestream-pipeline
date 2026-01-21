@@ -4,15 +4,14 @@ use tokio::{
     sync::mpsc::{Receiver, Sender},
 };
 
-use crate::Signal;
-
-const RELAY_ADDRESS: &str = "165.227.10.141:8080";
+use crate::{HOST, Signal};
 
 pub async fn run_peer_socket(
     send_to_gst: Sender<Signal>,
     mut tokio_recv: Receiver<Signal>,
 ) -> std::io::Result<()> {
-    let mut tcp_stream = TcpStream::connect(RELAY_ADDRESS).await?;
+    let relay_address = format!("{}:8080", HOST);
+    let mut tcp_stream = TcpStream::connect(relay_address).await?;
 
     let (read_half, write_half) = tcp_stream.split();
     let mut socket_reader = BufReader::new(read_half);

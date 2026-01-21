@@ -10,3 +10,6 @@ pub enum Signal {
     Answer(String),
     IceCandidate { mline_index: u32, candidate: String },
 }
+
+pub const HOST: &str = "0.0.0.0";
+// pub const HOST: &str = "165.227.10.141";
