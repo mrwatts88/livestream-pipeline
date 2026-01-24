@@ -37,14 +37,6 @@ cargo run --bin relay
 
 The relay server listens on `0.0.0.0:8080` and broadcasts signaling messages between connected peers.
 
-### Start the Producer
-
-```bash
-cargo run --bin producer
-```
-
-Captures from your default camera and microphone, encodes with low-latency settings, and establishes a WebRTC connection.
-
 ### Start the Consumer
 
 ```bash
@@ -52,6 +44,14 @@ cargo run --bin consumer
 ```
 
 Receives the WebRTC stream and plays it back using your system's audio/video outputs.
+
+### Start the Producer
+
+```bash
+cargo run --bin producer
+```
+
+Captures from your default camera and microphone, encodes with low-latency settings, and establishes a WebRTC connection.
 
 ## Configuration
 
